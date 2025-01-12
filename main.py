@@ -1,4 +1,5 @@
 from csv_reader import CSVReader
+from simulated_annealing import SimulatedAnnealing
 
 if __name__ == "__main__":
     stock_layout = {
@@ -26,3 +27,8 @@ if __name__ == "__main__":
     product_boxes["box_pieces"] = product_boxes_file.get_column_values("PECAS")
     product_boxes["wave_class"] = product_boxes_file.get_column_values("CLASSE_ONDA")
     product_boxes["product_boxes_sku"] = product_boxes_file.get_column_values("SKU")
+
+    sa = SimulatedAnnealing(stock_layout, product_boxes)
+    sa.fill_boxes()
+    sa.fill_corridors()
+    sa.generate_initial_solution()

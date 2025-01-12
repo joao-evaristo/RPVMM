@@ -1,5 +1,7 @@
 import random
 import math
+from box import Box
+from corridor import Corridor
 
 # Definir qual caixa deve ser alocada a qual onda de forma que a área de picking média das ondas seja a
 # menor possível, então além de atribuir uma caixa a uma onda é preciso definir quais corredores serão
@@ -10,27 +12,28 @@ import math
 # Uma caixa só pode ser atribuída a uma onda.
 # Evitar que ondas distintas ocupem os mesmos corredores.
 
-
 class SimulatedAnnealing:
     def __init__(
         self,
-        J,
-        I,
-        K,
-        P,
-        C,
-        W=6000,
+        stock_layout,
+        product_boxes,
+        w=6000,
         initial_temp=1000,
         alpha=0.99,
         sa_max=10,
     ):
-        self.J = J  # Conjunto das ondas
-        self.I = I  # Conjunto das caixas
-        self.K = K  # Conjunto dos corredores
-        self.P = P  # Conjunto dos produtos
-        self.C = C  # Conjunto de classes de onda
-        self.W = W  # Capacidade máxima de produtos da onda
-        self.facilidades = []
+        self.J = product_boxes["wave_class"]  # Conjunto das ondas
+        self.I = product_boxes["box_id"]  # Conjunto das caixas
+        self.K = stock_layout["corridor"]  # Conjunto dos corredores
+        self.P = product_boxes["product_boxes_sku"]  # Conjunto dos produtos
+        self.C = product_boxes["wave_class"]  # Conjunto de classes de onda
+        self.F = stock_layout["floor"] # Conjunto dos andares
+        self.M = product_boxes["box_pieces"] # Conjunto da quantidade de produtos
+        self.L = stock_layout["sku"]  # Conjunto dos produtos nos corredores
+        self.Q = stock_layout["pieces"]  # Conjunto da quantidade de produtos nos corredores
+        self.W = w  # Capacidade máxima de produtos da onda
+        self.boxes = {}
+        self.corridors = {}
         self.best_solution = None
         self.actual_cost = 0
         self.solution_cost = 0
@@ -38,25 +41,85 @@ class SimulatedAnnealing:
         self.temperature = self.initial_temp
         self.alpha = alpha
         self.sa_max = sa_max
-        # test
+        self.corridor_boxes = []
+        self.wave_boxes = []
+        self.floor_punishment = 0
+        self.corridor_punishment = 0
 
         # preciso saber qual caixa foi aloca a qual onda
         # e quais corredores serão usados pela onda
-
+        # Uma caixa só pode ser atribuída a uma onda.
         # se uma onda usa um corredor, ja posso marcar ele como utilizado
-        # array de binarios para marcar se o corredor foi utilizado
-        # uma solucao sera formada por
+        # se uma onda usa um corredor, e outra onda usa o mesmo corredor, penalizar
+        # para calcular a funcao objetivo, usar um array de corredores utilizados
 
-    def gerar_solucao_inicial_gulosa(self):
-        facilidades = sorted(
-            range(self.m), key=lambda x: sum(self.distancias[x]), reverse=True
-        )
-        return facilidades
+        # penalizacao
+        # se uma onda usa mais de um andar, penalizar. somar uma variavel
+        # se uma onda usa um corredor que ja foi usado por outra onda, penalizar. somar uma variavel
 
-    def gerar_solucao_inicial_aleatoria(self):
-        # gerar uma solucao inicial aleatoria
-        facilidades = random.sample(range(self.m), self.m)
-        return facilidades
+        # uma solucao sera formada por um array de
+        # array de corredores, cada posição do array representa um corredor, e o valor da posição representa
+        # a caixa alocada
+        # array de ondas, cada posição do array representa uma onda, e o valor da posição representa a caixa alocada
+
+    # def gerar_solucao_inicial_gulosa(self):
+    #     facilidades = sorted(
+    #         range(self.m), key=lambda x: sum(self.distancias[x]), reverse=True
+    #     )
+    #     return facilidades
+    # vou ter que corrigir isso para reutilizar idices ja preenchidos
+    def fill_boxes(self):
+        # preencher o array de caixas
+        current_box = self.I[0]
+        current_box_index = 0
+        for i in range(len(self.I)):
+            current_box_id = self.I[i]
+
+            # Check if the box already exists in the dictionary
+            if current_box_id not in self.boxes:
+                # If it doesn't exist, create a new box
+                self.boxes[current_box_id] = Box(self.C[i])
+
+            # Add the product to the existing or newly created box
+            self.boxes[current_box_id].add_product(self.P[i], self.M[i])
+
+    def fill_corridors(self):
+        # preencher o array de corredores
+        for index, current_corridor in enumerate(self.K):
+            if f'{current_corridor}_{self.F[index]}' not in self.corridors:
+                self.corridors[f'{current_corridor}_{self.F[index]}'] = Corridor(self.F[index])
+            self.corridors[f'{current_corridor}_{self.F[index]}'].add_product(self.L[index], self.Q[index])
+
+    def generate_initial_solution(self):
+        # gerar solucao inicial gulosa pegando os corredores mais proximos do lado do corredor inicial.
+        # Pega a primeira caixa, verifica e aloca no primeiro corredor que encontrar que satisfaça a demanda
+        # considerar corredores impares tendo como vizinhos corredores impares vizinhos e corredores pares vizinhos
+        #evitar avancar o andar, caso nao tenha mais estoque nos corredores do andar, sobe o andar
+        corridors_copy = self.corridors.copy()
+        boxes_copy = self.boxes.copy()
+        for(i, box) in enumerate(boxes_copy):
+            box = boxes_copy[self.I[i]]
+        #initial_box = boxes_copy[self.I[0]]
+            product = box.products[0]
+            corridor_id, corridor = self.find_corridor(corridors_copy, product)
+            if corridor_id:
+                print(corridor_id)
+        # conferir se deu certo
+        # fazer atribuicoes dos corredores, ondas, etc
+        #itera sobre os produtos da caixa
+        #passa para a proxima caixa
+        #assim em diante
+        #passar organizado em impares e pares, todas as organizacoes em pre work
+    def find_corridor(self, corridors, product):
+        #pensar em deixar um dict ja com os possiveis corredores para cada produto
+        # nao posso pensar em pegar apenas o corredor que atenda a demanda completa, porque pode ser parcial
+        # encontrar o corredor mais proximo para atender a demanda do produto
+        for corridor_id, corridor in corridors.items():
+            has_consumed = corridor.consume_product(product.sku, product.quantity)
+            if has_consumed:
+                return corridor_id, corridor
+        return None, None
+
 
     def define_atendimento(self, facilidades):
         # definir o atendimento de cada cliente
@@ -122,27 +185,25 @@ class SimulatedAnnealing:
         # utiliza o fast simulated annealing
         self.temperature = self.temperature * self.alpha
 
-    def executa(self):
-        facilidades = self.gerar_solucao_inicial_gulosa()
-        self.facilidades = facilidades
-        self.best_solution = facilidades
-        self.actual_cost = self.funcao_objetivo(facilidades)
-        self.solution_cost = self.actual_cost
-        print("*" * 50)
-        print(f"Custo da solucao inicial: {self.actual_cost}")
-        while self.temperature > 0.1:
-            for _ in range(self.sa_max):
-                vizinho = self.vizinhanca()
-                custo_vizinho = self.funcao_objetivo(vizinho)
-                if self.aceita_melhora(custo_vizinho):
-                    self.facilidades = vizinho
-                    self.actual_cost = custo_vizinho
-                    if custo_vizinho > self.funcao_objetivo(self.best_solution):
-                        self.best_solution = vizinho
-                        self.solution_cost = custo_vizinho
-            self.atualiza_temperatura()
-        facilidades_abertas = self.best_solution[: self.p]
-        print(f"Melhor solucao: \n{facilidades_abertas}")
-        print(f"Custo da melhor solucao: {self.solution_cost}")
-        print("*" * 50)
-        return self.solution_cost
+    # def executa(self):
+    #     self.best_solution = facilidades
+    #     self.actual_cost = self.funcao_objetivo(facilidades)
+    #     self.solution_cost = self.actual_cost
+    #     print("*" * 50)
+    #     print(f"Custo da solucao inicial: {self.actual_cost}")
+    #     while self.temperature > 0.1:
+    #         for _ in range(self.sa_max):
+    #             vizinho = self.vizinhanca()
+    #             custo_vizinho = self.funcao_objetivo(vizinho)
+    #             if self.aceita_melhora(custo_vizinho):
+    #                 self.facilidades = vizinho
+    #                 self.actual_cost = custo_vizinho
+    #                 if custo_vizinho > self.funcao_objetivo(self.best_solution):
+    #                     self.best_solution = vizinho
+    #                     self.solution_cost = custo_vizinho
+    #         self.atualiza_temperatura()
+    #     facilidades_abertas = self.best_solution[: self.p]
+    #     print(f"Melhor solucao: \n{facilidades_abertas}")
+    #     print(f"Custo da melhor solucao: {self.solution_cost}")
+    #     print("*" * 50)
+    #     return self.solution_cost
