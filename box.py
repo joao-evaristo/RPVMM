@@ -5,7 +5,7 @@ class Box:
         self.wave_class = wave_class
         self.products = []
         self.wave = None
-        self.corridors = []
+        self.corridors = set()
 
     def add_product(self, sku: str, quantity: int):
         self.products.append(Product(sku, quantity))
@@ -14,12 +14,14 @@ class Box:
         self.wave = wave
 
     def add_corridor(self, corridor):
-        self.corridors.append(corridor)
+        self.corridors.add(corridor)
 
     def find_product(self, sku: str):
         """Search for a product by SKU in the box."""
         for product in self.products:
             if product.sku == sku:
                 return product
-        return None  # Return None if the product is not found
+        return None
 
+    def get_total_products(self):
+        return sum([product.quantity for product in self.products])

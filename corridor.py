@@ -14,7 +14,7 @@ class Corridor:
         for product in self.products:
             if product.sku == sku:
                 return product
-        return None  # Return None if the product is not found
+        return None
 
     def add_wave(self, wave):
         self.waves.append(wave)
@@ -23,7 +23,10 @@ class Corridor:
         """Remove a product from the corridor."""
         for product in self.products:
             if product.sku == sku:
-                product.quantity -= quantity
-                if product.quantity == 0:
+                if quantity >= product.quantity:
+                    remaining = quantity - product.quantity
                     self.products.remove(product)
-                return True
+                else:
+                    remaining = 0
+                    product.quantity -= quantity
+                return remaining

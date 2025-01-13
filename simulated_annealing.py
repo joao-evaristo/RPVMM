@@ -62,29 +62,14 @@ class SimulatedAnnealing:
         # a caixa alocada
         # array de ondas, cada posição do array representa uma onda, e o valor da posição representa a caixa alocada
 
-    # def gerar_solucao_inicial_gulosa(self):
-    #     facilidades = sorted(
-    #         range(self.m), key=lambda x: sum(self.distancias[x]), reverse=True
-    #     )
-    #     return facilidades
-    # vou ter que corrigir isso para reutilizar idices ja preenchidos
     def fill_boxes(self):
-        # preencher o array de caixas
-        current_box = self.I[0]
-        current_box_index = 0
         for i in range(len(self.I)):
             current_box_id = self.I[i]
-
-            # Check if the box already exists in the dictionary
             if current_box_id not in self.boxes:
-                # If it doesn't exist, create a new box
                 self.boxes[current_box_id] = Box(self.C[i])
-
-            # Add the product to the existing or newly created box
             self.boxes[current_box_id].add_product(self.P[i], self.M[i])
 
     def fill_corridors(self):
-        # preencher o array de corredores
         for index, current_corridor in enumerate(self.K):
             if f'{current_corridor}_{self.F[index]}' not in self.corridors:
                 self.corridors[f'{current_corridor}_{self.F[index]}'] = Corridor(self.F[index])
@@ -92,33 +77,41 @@ class SimulatedAnnealing:
 
     def generate_initial_solution(self):
         # gerar solucao inicial gulosa pegando os corredores mais proximos do lado do corredor inicial.
-        # Pega a primeira caixa, verifica e aloca no primeiro corredor que encontrar que satisfaça a demanda
-        # considerar corredores impares tendo como vizinhos corredores impares vizinhos e corredores pares vizinhos
-        #evitar avancar o andar, caso nao tenha mais estoque nos corredores do andar, sobe o andar
         corridors_copy = self.corridors.copy()
         boxes_copy = self.boxes.copy()
-        for(i, box) in enumerate(boxes_copy):
-            box = boxes_copy[self.I[i]]
-        #initial_box = boxes_copy[self.I[0]]
-            product = box.products[0]
-            corridor_id, corridor = self.find_corridor(corridors_copy, product)
-            if corridor_id:
-                print(corridor_id)
-        # conferir se deu certo
-        # fazer atribuicoes dos corredores, ondas, etc
-        #itera sobre os produtos da caixa
-        #passa para a proxima caixa
-        #assim em diante
+        wave = 0
+        wave_products_quantity = 0
+        current_wave_class = self.C[0]
+        for box_id, box in boxes_copy.items():
+            total_products_box = box.get_total_products()
+            if wave_products_quantity + total_products_box > self.W:
+                continue
+            if box.wave_class != current_wave_class:
+                wave += 1
+                wave_products_quantity = 0
+                current_wave_class = box.wave
+            box.set_wave(wave)
+            for product in box.products:
+                filled = False
+                product_quantity_remaining = product.quantity
+                while not filled:
+                    corridor_id, corridor, remaining = self.find_corridor(corridors_copy, product.sku, product_quantity_remaining)
+                    if not corridor_id:
+                        raise Exception("Corridor not found")
+                    wave_products_quantity += product.quantity
+                    product_quantity_remaining = remaining
+                    box.add_corridor(corridor_id)
+                    if remaining == 0:
+                        filled = True
         #passar organizado em impares e pares, todas as organizacoes em pre work
-    def find_corridor(self, corridors, product):
-        #pensar em deixar um dict ja com os possiveis corredores para cada produto
-        # nao posso pensar em pegar apenas o corredor que atenda a demanda completa, porque pode ser parcial
-        # encontrar o corredor mais proximo para atender a demanda do produto
+    def find_corridor(self, corridors, sku, quantity):
+        # usar um indice de inicio de pesquisa para otimizar
+        # pensar em deixar um dict ja com os possiveis corredores para cada produto (isso mesmo, produto e nao caixa).
         for corridor_id, corridor in corridors.items():
-            has_consumed = corridor.consume_product(product.sku, product.quantity)
-            if has_consumed:
-                return corridor_id, corridor
-        return None, None
+            remaining = corridor.consume_product(sku, quantity)
+            if remaining or remaining == 0:
+                return corridor_id, corridor, remaining
+        return None, None, None
 
 
     def define_atendimento(self, facilidades):
