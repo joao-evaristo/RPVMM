@@ -2,6 +2,7 @@ import random
 import math
 from box import Box
 from corridor import Corridor
+from wave import Wave
 
 # Definir qual caixa deve ser alocada a qual onda de forma que a área de picking média das ondas seja a
 # menor possível, então além de atribuir uma caixa a uma onda é preciso definir quais corredores serão
@@ -22,11 +23,10 @@ class SimulatedAnnealing:
         alpha=0.99,
         sa_max=10,
     ):
-        self.J = product_boxes["wave_class"]  # Conjunto das ondas
-        self.I = product_boxes["box_id"]  # Conjunto das caixas
-        self.K = stock_layout["corridor"]  # Conjunto dos corredores
-        self.P = product_boxes["product_boxes_sku"]  # Conjunto dos produtos
-        self.C = product_boxes["wave_class"]  # Conjunto de classes de onda
+        self.product_boxes = product_boxes["box_id"]  # Conjunto das caixas
+        self.stock_corridors = stock_layout["corridor"]  # Conjunto dos corredores
+        self.products = product_boxes["product_boxes_sku"]  # Conjunto dos produtos
+        self.wave_classes = product_boxes["wave_class"]  # Conjunto de classes de onda
         self.F = stock_layout["floor"] # Conjunto dos andares
         self.M = product_boxes["box_pieces"] # Conjunto da quantidade de produtos
         self.L = stock_layout["sku"]  # Conjunto dos produtos nos corredores
@@ -34,6 +34,10 @@ class SimulatedAnnealing:
         self.W = w  # Capacidade máxima de produtos da onda
         self.boxes = {}
         self.corridors = {}
+        self.product_to_corridors = {}
+        self.waves = {}
+        self.floor_punishment_weight = 2
+        self.corridor_punishment_weight = 1
         self.best_solution = None
         self.actual_cost = 0
         self.solution_cost = 0
@@ -46,72 +50,121 @@ class SimulatedAnnealing:
         self.floor_punishment = 0
         self.corridor_punishment = 0
 
-        # preciso saber qual caixa foi aloca a qual onda
-        # e quais corredores serão usados pela onda
-        # Uma caixa só pode ser atribuída a uma onda.
-        # se uma onda usa um corredor, ja posso marcar ele como utilizado
-        # se uma onda usa um corredor, e outra onda usa o mesmo corredor, penalizar
-        # para calcular a funcao objetivo, usar um array de corredores utilizados
-
-        # penalizacao
-        # se uma onda usa mais de um andar, penalizar. somar uma variavel
-        # se uma onda usa um corredor que ja foi usado por outra onda, penalizar. somar uma variavel
-
-        # uma solucao sera formada por um array de
-        # array de corredores, cada posição do array representa um corredor, e o valor da posição representa
-        # a caixa alocada
-        # array de ondas, cada posição do array representa uma onda, e o valor da posição representa a caixa alocada
-
     def fill_boxes(self):
-        for i in range(len(self.I)):
-            current_box_id = self.I[i]
+        for i, current_box_id in enumerate(self.product_boxes):
+            current_box_id = int(current_box_id)
             if current_box_id not in self.boxes:
-                self.boxes[current_box_id] = Box(self.C[i])
-            self.boxes[current_box_id].add_product(self.P[i], self.M[i])
+                self.boxes[current_box_id] = Box(self.wave_classes[i])
+            self.boxes[current_box_id].add_product(self.products[i], self.M[i])
+
+        print(self.boxes.keys())
 
     def fill_corridors(self):
-        for index, current_corridor in enumerate(self.K):
-            if f'{current_corridor}_{self.F[index]}' not in self.corridors:
-                self.corridors[f'{current_corridor}_{self.F[index]}'] = Corridor(self.F[index])
-            self.corridors[f'{current_corridor}_{self.F[index]}'].add_product(self.L[index], self.Q[index])
+        for index, current_corridor in enumerate(self.stock_corridors):
+            corridor_key = f'{current_corridor}_{self.F[index]}'
+            if corridor_key not in self.corridors:
+                self.corridors[corridor_key] = Corridor(self.F[index])
+            self.corridors[corridor_key].add_product(
+                sku=self.L[index],
+                quantity=self.Q[index],
+            )
+            if self.L[index] not in self.product_to_corridors:
+                self.product_to_corridors[self.L[index]] = []
+            self.product_to_corridors[self.L[index]].append(corridor_key)
+
 
     def generate_initial_solution(self):
-        # gerar solucao inicial gulosa pegando os corredores mais proximos do lado do corredor inicial.
+        def reset_wave(wave, wave_products_quantity, current_wave_class, box):
+            wave += 1
+            wave_products_quantity = 0
+            current_wave_class = box.wave_class
+            return wave, wave_products_quantity, current_wave_class
+
         corridors_copy = self.corridors.copy()
         boxes_copy = self.boxes.copy()
         wave = 0
         wave_products_quantity = 0
-        current_wave_class = self.C[0]
+        current_wave_class = self.wave_classes[0]
+
         for box_id, box in boxes_copy.items():
             total_products_box = box.get_total_products()
-            if wave_products_quantity + total_products_box > self.W:
-                continue
-            if box.wave_class != current_wave_class:
-                wave += 1
-                wave_products_quantity = 0
-                current_wave_class = box.wave
+
+            if wave_products_quantity + total_products_box > self.W or box.wave_class != current_wave_class:
+                wave, wave_products_quantity, current_wave_class = reset_wave(
+                    wave, wave_products_quantity, current_wave_class, box
+                )
+
+            if wave not in self.waves:
+                self.waves[wave] = Wave(current_wave_class)
+
             box.set_wave(wave)
+            self.waves[wave].add_box(box_id, total_products_box)
+
             for product in box.products:
-                filled = False
                 product_quantity_remaining = product.quantity
-                while not filled:
-                    corridor_id, corridor, remaining = self.find_corridor(corridors_copy, product.sku, product_quantity_remaining)
+
+                while product_quantity_remaining > 0:
+                    corridor_id, corridor, remaining = self.find_corridor(
+                        product.sku, product_quantity_remaining
+                    )
+
                     if not corridor_id:
                         raise Exception("Corridor not found")
+
                     wave_products_quantity += product.quantity
                     product_quantity_remaining = remaining
                     box.add_corridor(corridor_id)
-                    if remaining == 0:
-                        filled = True
-        #passar organizado em impares e pares, todas as organizacoes em pre work
-    def find_corridor(self, corridors, sku, quantity):
-        # usar um indice de inicio de pesquisa para otimizar
-        # pensar em deixar um dict ja com os possiveis corredores para cada produto (isso mesmo, produto e nao caixa).
-        for corridor_id, corridor in corridors.items():
+                    self.waves[wave].insert_corridor(corridor_id)
+
+
+    def find_corridor(self, sku, quantity):
+        possible_corridors = self.product_to_corridors.get(sku, [])
+        for corridor_id in possible_corridors:
+            corridor = self.corridors[corridor_id]
             remaining = corridor.consume_product(sku, quantity)
             if remaining or remaining == 0:
                 return corridor_id, corridor, remaining
         return None, None, None
+
+    def calculate_area(self, wave: Wave):
+        max_min_even_corridor = wave.max_min_even_corridor
+        max_min_odd_corridor = wave.max_min_odd_corridor
+        area = 0
+        for floor in set(wave.floors):
+            if floor in max_min_even_corridor:
+                area += max_min_even_corridor[floor][0] - max_min_even_corridor[floor][1]
+            if floor in max_min_odd_corridor:
+                area += max_min_odd_corridor[floor][0] - max_min_odd_corridor[floor][1]
+        return area
+
+    def calculate_punishment_floor(self, wave: Wave):
+        return len(wave.floors) * self.floor_punishment_weight
+
+    def calculate_punishment_corridor(self, wave: Wave, corridors_used):
+        corridors_already_used = wave.corridors.intersection(corridors_used)
+        return len(corridors_already_used) * self.corridor_punishment_weight
+
+    def calculate_fo(self):
+        total_waves = len(self.waves)
+        total_area = 0
+        floor_punishment = 0
+        corridor_punishment = 0
+        corridors_used = set()
+        for wave in self.waves.values():
+            total_area += self.calculate_area(wave)
+            floor_punishment += self.calculate_punishment_floor(wave)
+            corridor_punishment += self.calculate_punishment_corridor(wave, corridors_used)
+            corridors_used.update(wave.corridors)
+        average_area = total_area / total_waves
+        print(average_area)
+        fo = average_area + floor_punishment + corridor_punishment
+        print(fo)
+        return fo
+
+    # pensar em como vou fazer para gerar a vizinhança
+    # uma ideia é trocar uma caixa de uma onda por outra caixa de outra onda
+    # ou trocar o corredor
+    # tem que validar se a solucao e valida ( atende os criterios de caixa, onda, classe, etc)
 
 
     def define_atendimento(self, facilidades):
@@ -127,15 +180,6 @@ class SimulatedAnnealing:
                     menor_distancia = self.distancias[j][i]
                     xij[i] = j
         return xij
-
-    def funcao_objetivo(self, s):
-        # para cada cliente, somar a distancia entre ele e a facilidade que o atende
-        # a funcao objetivo e maximizar a soma das distancias da distancia minima entre cada facilidade e cada cliente
-        xij = self.define_atendimento(s)
-        custo = 0
-        for i, j in enumerate(xij):
-            custo += self.distancias[j][i]
-        return custo
 
     def vizinhanca(self):
         # gerar uma vizinhanca da solucao atual

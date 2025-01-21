@@ -17,7 +17,6 @@ class Box:
         self.corridors.add(corridor)
 
     def find_product(self, sku: str):
-        """Search for a product by SKU in the box."""
         for product in self.products:
             if product.sku == sku:
                 return product
