@@ -19,11 +19,11 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     max_wave_capacity: int = 6000
-    initial_temp: float = 1000
+    initial_temp: float = 10000
     alpha: float = 0.99
-    sa_max: int = 30
-    floor_punishment_weight: int = 2
-    corridor_punishment_weight: int = 1
+    sa_max: int = 300
+    floor_punishment_weight: int = 0
+    corridor_punishment_weight: int = 0
 
 
 class SimulatedAnnealing:
@@ -223,8 +223,8 @@ class SimulatedAnnealing:
         if neighbor_cost < current_cost:
             return True
         else:
-            probability = math.exp((current_cost - neighbor_cost) / self.temperature)
-            return random.random() < probability
+            delta = neighbor_cost - current_cost
+            return random.random() < math.exp(delta / self.temperature)
 
     def calculate_fo_for_solution(self, solution):
         original_waves = self.waves
