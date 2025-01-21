@@ -19,7 +19,7 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     max_wave_capacity: int = 6000
-    initial_temp: float = 10000
+    initial_temp: float = 1000
     alpha: float = 0.99
     sa_max: int = 300
     floor_punishment_weight: int = 0
@@ -237,3 +237,7 @@ class SimulatedAnnealing:
     # uma ideia é trocar uma caixa de uma onda por outra caixa de outra onda
     # ou trocar o corredor
     # tem que validar se a solucao e valida ( atende os criterios de caixa, onda, classe, etc)
+
+
+    # Permitir que solucoes que nao cumpram as restricoes, mas colocando uma alta penalizacao
+    # o que permite um maior leque de alteracoes e evita que o algoritmo fique preso em um minimo local
