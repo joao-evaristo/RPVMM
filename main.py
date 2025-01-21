@@ -30,5 +30,4 @@ if __name__ == "__main__":
     sa = SimulatedAnnealing(stock_layout, product_boxes)
     sa.fill_boxes()
     sa.fill_corridors()
-    sa.generate_initial_solution()
-    sa.calculate_fo()
+    sa.simulated_annealing()
