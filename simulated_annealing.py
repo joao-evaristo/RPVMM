@@ -98,8 +98,6 @@ class SimulatedAnnealing:
             self.waves[wave].add_box(box_id, total_products_box)
 
             self.allocate_products_to_corridors(box, wave, corridors_copy)
-        aaa = self.waves
-        print()
 
 
     def allocate_products_to_corridors(self, box: Box, wave: int, corridors: Dict[str, Corridor] = None) -> None:
