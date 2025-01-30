@@ -50,8 +50,13 @@ class Wave:
         for corridor_key in self.corridors:
             corridor_id, floor = self.extract_corridor_id_floor(corridor_key)
             corridors.add(corridor_id)
-        even_corridors = [corridor for corridor in corridors if corridor % 2 == 0].sort()
-        odd_corridors = [corridor for corridor in corridors if corridor % 2 != 0].sort()
+        print([corridor for corridor in corridors if corridor % 2 == 0])
+        even_corridors = [corridor for corridor in corridors if corridor % 2 == 0]
+        odd_corridors = [corridor for corridor in corridors if corridor % 2 != 0]
+        even_corridors.sort()
+        odd_corridors.sort()
+        self.max_min_even_corridor = {floor: [even_corridors[-1], even_corridors[0]] for floor in self.floors}
+        self.max_min_odd_corridor = {floor: [odd_corridors[-1], odd_corridors[0]] for floor in self.floors}
 
 
     def update_floors(self):

@@ -159,6 +159,21 @@ class SimulatedAnnealing:
         corridors_already_used = corridors_wave.intersection(corridors_used)
         return len(corridors_already_used) * self.config.corridor_punishment_weight
 
+    def validate_solution(self, waves: Dict[int, Wave]) -> bool:
+        for wave in waves.values():
+            wave_boxes = self.get_boxes_from_wave(wave)
+            if wave.total_products > self.config.max_wave_capacity:
+                return False
+            if len(set([box.wave_class for box in wave_boxes])) > 1:
+                return False
+            for box in wave_boxes:
+                if box.wave != wave:
+                    return False
+        return True
+
+    def get_boxes_from_wave(self, wave: Wave) -> List[Box]:
+        return [self.boxes[box_id] for box_id in wave.boxes]
+
     def simulated_annealing(self):
         self.generate_initial_solution()
         current_solution = self.waves.copy()
@@ -188,8 +203,41 @@ class SimulatedAnnealing:
         self.solution_cost = best_cost
         print(f"\nBest cost: {self.solution_cost}")
 
+    # def generate_neighbor(self, current_solution):
+    #     neighbor = {wave: Wave(wave_obj.wave_class) for wave, wave_obj in current_solution.items()}
+    #     for wave, wave_obj in current_solution.items():
+    #         neighbor[wave].boxes = wave_obj.boxes.copy()
+    #         neighbor[wave].corridors = wave_obj.corridors.copy()
+    #         neighbor[wave].floors = wave_obj.floors.copy()
+    #         neighbor[wave].max_min_even_corridor = wave_obj.max_min_even_corridor.copy()
+    #         neighbor[wave].max_min_odd_corridor = wave_obj.max_min_odd_corridor.copy()
+    #         neighbor[wave].total_products = wave_obj.total_products
+    #
+    #     waves_by_class = {}
+    #     for wave, wave_obj in neighbor.items():
+    #         waves_by_class.setdefault(wave_obj.wave_class, []).append(wave)
+    #
+    #     valid_classes = [wc for wc, waves in waves_by_class.items() if len(waves) >= 2]
+    #     if valid_classes:
+    #         selected_class = random.choice(valid_classes)
+    #         wave1, wave2 = random.sample(waves_by_class[selected_class], 2)
+    #
+    #         if neighbor[wave1].boxes and neighbor[wave2].boxes:
+    #             box1 = random.choice(list(neighbor[wave1].boxes))
+    #             box2 = random.choice(list(neighbor[wave2].boxes))
+    #             neighbor[wave1].remove_box(self.boxes[box1])
+    #             neighbor[wave2].remove_box(self.boxes[box2])
+    #             box1_corridors = self.boxes[box1].corridors.keys()
+    #             box2_corridors = self.boxes[box2].corridors.keys()
+    #             neighbor[wave1].insert_box(self.boxes[box2], box2_corridors)
+    #             neighbor[wave2].insert_box(self.boxes[box1], box1_corridors)
+    #
+    #     return neighbor
+
     def generate_neighbor(self, current_solution):
+        # Initialize the neighbor solution
         neighbor = {wave: Wave(wave_obj.wave_class) for wave, wave_obj in current_solution.items()}
+        corridor_copy = self.corridors.copy()
         for wave, wave_obj in current_solution.items():
             neighbor[wave].boxes = wave_obj.boxes.copy()
             neighbor[wave].corridors = wave_obj.corridors.copy()
@@ -198,24 +246,53 @@ class SimulatedAnnealing:
             neighbor[wave].max_min_odd_corridor = wave_obj.max_min_odd_corridor.copy()
             neighbor[wave].total_products = wave_obj.total_products
 
-        waves_by_class = {}
-        for wave, wave_obj in neighbor.items():
-            waves_by_class.setdefault(wave_obj.wave_class, []).append(wave)
+        # Randomly select waves and shuffle boxes between them
+        waves = list(neighbor.keys())
+        if len(waves) >= 2:
+            wave1, wave2 = random.sample(waves, 2)
 
-        valid_classes = [wc for wc, waves in waves_by_class.items() if len(waves) >= 2]
-        if valid_classes:
-            selected_class = random.choice(valid_classes)
-            wave1, wave2 = random.sample(waves_by_class[selected_class], 2)
-
+            # Randomly pick boxes to swap between the two waves
             if neighbor[wave1].boxes and neighbor[wave2].boxes:
                 box1 = random.choice(list(neighbor[wave1].boxes))
                 box2 = random.choice(list(neighbor[wave2].boxes))
+
+                # Remove boxes from their respective waves
                 neighbor[wave1].remove_box(self.boxes[box1])
                 neighbor[wave2].remove_box(self.boxes[box2])
+
+                # Swap corridors used by the boxes
                 box1_corridors = self.boxes[box1].corridors.keys()
                 box2_corridors = self.boxes[box2].corridors.keys()
+
+                # Insert boxes into the opposite waves
                 neighbor[wave1].insert_box(self.boxes[box2], box2_corridors)
                 neighbor[wave2].insert_box(self.boxes[box1], box1_corridors)
+
+        # Introduce additional randomness by reassigning boxes to new random corridors
+        for wave_obj in neighbor.values():
+            for box_id in list(wave_obj.boxes):
+                box = self.boxes[box_id]
+                for product in box.products:
+                    product_quantity_remaining = product.quantity
+
+                    # Find a new random corridor for the product
+                    while product_quantity_remaining > 0:
+                        possible_corridors = list(self.product_to_corridors.get(product.sku, []))
+                        #print(possible_corridors)
+                        #print(product_quantity_remaining)
+                        if not possible_corridors:
+                            break
+                        new_corridor_id = random.choice(possible_corridors)
+                        #print(new_corridor_id)
+                        new_corridor = corridor_copy[new_corridor_id]
+                        # melhor deixar algo que relacione o produto ao corredor na wave, para quando eu mudar o corredor
+                        # eu consiga remover o produto do corredor antigo
+                        # poderia remover o corredor, ver quais caixas/produtos estao nele e realocar
+                        remaining = new_corridor.consume_product(product.sku, product_quantity_remaining)
+                        print(remaining)
+                        if remaining is not None:
+                            product_quantity_remaining = remaining
+                            wave_obj.add_corridor(new_corridor_id, product.sku)
 
         return neighbor
 
