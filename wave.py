@@ -4,20 +4,38 @@ class Wave:
     def __init__(self, wave_class: str):
         self.wave_class = wave_class
         self.boxes: set[int] = set()
-        self.corridors: dict[str, set[int]] = {}
+        self.corridors: dict[str, dict[int, dict[str, int]]] = {}
         self.floors: set[int] = set()
         self.max_min_even_corridor: dict[int, list[int]] = {}
         self.max_min_odd_corridor: dict[int, list[int]] = {}
         self.total_products: int = 0
+        self.corridors_products: dict[str, dict[str, int]] = {}
+        # corredor -> caixa: [produtos]
 
     def add_box(self, box_id: int, box_pieces: int) -> None:
         self.boxes.add(box_id)
         self.total_products += box_pieces
 
-    def add_corridor(self, corridor_key: str, box_id: int) -> None:
+    def add_corridor(self, corridor_key: str, box_id: int, product: str, quantity: int) -> None:
         if corridor_key not in self.corridors:
-            self.corridors[corridor_key] = set()
-        self.corridors[corridor_key].add(box_id)
+            self.corridors[corridor_key] = {}
+        if box_id not in self.corridors[corridor_key]:
+            self.corridors[corridor_key][box_id] = {}
+        if product not in self.corridors[corridor_key][box_id]:
+            self.corridors[corridor_key][box_id][product] = 0
+        self.corridors[corridor_key][box_id][product] += quantity
+
+    def add_corridor_product(self, corridor_key: str, product_sku: str, quantity: int) -> None:
+        if corridor_key not in self.corridors_products:
+            self.corridors_products[corridor_key] = {}
+        if product_sku not in self.corridors_products[corridor_key]:
+            self.corridors_products[corridor_key][product_sku] = 0
+        self.corridors_products[corridor_key][product_sku] += quantity
+
+    def get_boxes_corridor(self, corridor_key: str) -> set[int]:
+        if corridor_key in self.corridors:
+            return set(self.corridors[corridor_key].keys())
+        return set()
 
     def add_floor(self, floor: int) -> None:
         self.floors.add(floor)
@@ -84,3 +102,11 @@ class Wave:
         self.add_box(box.id, box.get_total_products())
         for corridor_key in corridors_keys:
             self.insert_corridor(corridor_key, box.id)
+
+    def remove_corridor(self, corridor_key: str) -> dict[str, int]:
+        if corridor_key in self.corridors:
+            products_quantity = self.corridors_products[corridor_key]
+            del self.corridors[corridor_key]
+            self.update_floors()
+            self.update_max_min_corridor()
+            return products_quantity
