@@ -1,4 +1,4 @@
-from random import random, randint
+from random import random, randint, choice
 
 import numpy as np
 import pandas as pd
@@ -23,7 +23,7 @@ class GenerateInstances:
         self.column_corridor = self.generate_column_corridor()
         self.column_floor = self.generate_column_floor()
         self.column_corridor_products, self.column_corridor_products_quantities = self.generate_column_corridor_products()
-
+        self.ensure_product_demand_met()
 
     def generate_column_box(self) -> np.array:
         column_box = np.array([])
@@ -92,15 +92,37 @@ class GenerateInstances:
                 corridor_products.clear()
             products_with_demand = list(self.product_demand.keys())
             possible_products = list(set(products_with_demand) - set(corridor_products))
-            product = possible_products[int(random() * len(possible_products))]
+            if not possible_products:
+                product = self.products[int(random() * len(corridor_products))]
+            else:
+                product = possible_products[int(random() * len(possible_products))]
             corridor_products.append(product)
-            quantity = randint(1, 100)
+            quantity = randint(1, 500)
             self.product_demand[product] -= quantity
             if self.product_demand[product] <= 0:
                 products_with_demand.remove(product)
             column_corridor_products = np.concatenate((column_corridor_products, np.array([product])))
             column_corridor_products_quantities = np.concatenate((column_corridor_products_quantities, np.array([quantity])))
         return column_corridor_products, column_corridor_products_quantities
+
+    def ensure_product_demand_met(self):
+        for product, demand in self.product_demand.items():
+            if demand > 0:
+                corridors_with_product = [
+                    (idx, corridor)
+                    for idx, corridor in enumerate(self.column_corridor_products)
+                    if corridor == product
+                ]
+
+                if corridors_with_product:
+                    chosen_idx, chosen_corridor = choice(corridors_with_product)
+
+                    self.column_corridor_products_quantities[chosen_idx] += demand
+                    self.product_demand[product] = 0
+
+                    print(f"Ajustado: {product} no corredor {chosen_corridor} (+{demand})")
+                else:
+                    print(f"Atenção! Nenhum corredor disponível para atender {product}.")
 
     def stock(self):
         return self.column_floor, self.column_corridor, self.column_corridor_products, self.column_corridor_products_quantities
@@ -149,7 +171,7 @@ class GenerateInstances:
 
 
 if __name__ == "__main__":
-    instances = GenerateInstances(10, 5, 3, 5, 2)
+    instances = GenerateInstances(2000, 2000, 6, 165, 5)
     instances.box_to_csv()
     instances.stock_to_csv()
     instances.generate_excel()
