@@ -10,7 +10,6 @@ class Wave:
         self.max_min_odd_corridor: dict[int, list[int]] = {}
         self.total_products: int = 0
         self.corridors_products: dict[str, dict[str, int]] = {}
-        # corredor -> caixa: [produtos]
 
     def add_box(self, box_id: int, box_pieces: int) -> None:
         self.boxes.add(box_id)
@@ -24,6 +23,9 @@ class Wave:
         if product not in self.corridors[corridor_key][box_id]:
             self.corridors[corridor_key][box_id][product] = 0
         self.corridors[corridor_key][box_id][product] += quantity
+        corridor_id, floor = self.extract_corridor_id_floor(corridor_key)
+        self.add_floor(floor)
+        self.update_corridor_bounds(corridor_id, floor)
 
     def add_corridor_product(self, corridor_key: str, product_sku: str, quantity: int) -> None:
         if corridor_key not in self.corridors_products:
@@ -39,12 +41,6 @@ class Wave:
 
     def add_floor(self, floor: int) -> None:
         self.floors.add(floor)
-
-    def insert_corridor(self, corridor_key: str, box_id: int) -> None:
-        corridor_id, floor = self.extract_corridor_id_floor(corridor_key)
-        self.add_corridor(corridor_key, box_id)
-        self.add_floor(floor)
-        self.update_corridor_bounds(corridor_id, floor)
 
     def extract_corridor_id_floor(self, corridor_key: str) -> tuple[int, int]:
         try:
@@ -68,7 +64,6 @@ class Wave:
         for corridor_key in self.corridors:
             corridor_id, floor = self.extract_corridor_id_floor(corridor_key)
             corridors.add(corridor_id)
-        print([corridor for corridor in corridors if corridor % 2 == 0])
         even_corridors = [corridor for corridor in corridors if corridor % 2 == 0]
         odd_corridors = [corridor for corridor in corridors if corridor % 2 != 0]
         even_corridors.sort()
@@ -103,10 +98,11 @@ class Wave:
         for corridor_key in corridors_keys:
             self.insert_corridor(corridor_key, box.id)
 
-    def remove_corridor(self, corridor_key: str) -> dict[str, int]:
+    def remove_corridor(self, corridor_key: str) -> dict[int, dict[str, int]]:
         if corridor_key in self.corridors:
             products_quantity = self.corridors_products[corridor_key]
+            box = self.corridors[corridor_key]
             del self.corridors[corridor_key]
             self.update_floors()
             self.update_max_min_corridor()
-            return products_quantity
+            return box

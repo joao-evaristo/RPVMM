@@ -22,8 +22,6 @@ class Corridor:
     def consume_product(self, sku: str, quantity: int):
         """Remove a product from the corridor."""
         for product in self.products:
-            print(product.sku, product.quantity)
-            print(sku)
             if product.sku == sku:
                 if quantity >= product.quantity:
                     remaining = quantity - product.quantity

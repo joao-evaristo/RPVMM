@@ -2,6 +2,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import itertools
 import random
+import sys
 import csv
 from validator import valida_resultado
 
@@ -9,7 +10,10 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
     P1 = 1
     model = gp.Model()
     model.setParam("Heuristics", 0)
+    #model.setParam("Method", 1)
     model.setParam("Presolve", 0)
+    model.setParam("NodefileStart", 0.25)
+    model.setParam('Threads', 1)
 
     # Atualizar Q_pka com base nos dados de entrada
     Q_pka = {(p, k, a): 0 for p in P for k in K for a in A}
@@ -17,27 +21,33 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
 
     corridor_indices = {k: idx + 1 for idx, k in enumerate(K)}
     C_to_index = {c: idx + 1 for idx, c in enumerate(C)}
+    P_to_index = {p: idx + 1 for idx, p in enumerate(P)}
+    J_to_index = {j: idx + 1 for idx, j in enumerate(J)}
+    #I_to_index = {i: idx + 1 for idx, i in enumerate(I)}
+    #A_to_index = {a: idx + 1 for idx, a in enumerate(A)}
 
     random.seed(42)
-
     # Dados q_pi fornecidos como entrada
     q_pi = q_pi_input
 
     # Gerar classes das caixas
-    C_i = {i: random.choice(list(C_to_index.values())) for i in I}
+    #C_i = {i: random.choice(list(C_to_index.values())) for i in I}
     # Variáveis
+    C_i = model.addVars(I, vtype=GRB.INTEGER, lb=min(C_to_index.values()), ub=max(C_to_index.values()), name="C_i")
     Z_j = model.addVars(J, vtype=GRB.INTEGER, lb=min(C_to_index.values()), ub=max(C_to_index.values()), name="Z_j")
     x_ij = model.addVars(I, J, vtype=GRB.BINARY, name="x_ij")
     t_kaj = model.addVars(K, A, J, vtype=GRB.BINARY, name="t_kaj")
-    # Z_pkaj: Se algum produto foi escolhido em pkaj (Binário)
+    # Z_aj: Se algum produto foi escolhido em aj (Binário)
     Z_aj = model.addVars(A, J, vtype=GRB.BINARY, name="Z_aj")
     # Variável indicadora que será 1 se algum produto foi escolhido na onda j andar a (Binário)
     A_aj = model.addVars(A, J, vtype=GRB.BINARY, name="A_aj")
-    print("terminou as variaveis")
-
     # E_pkaj: Quantity of product p picked from corridor k on floor a in wave j (InteiroNãoNegat.)
     E_pkaj = model.addVars(P, K, A, J, vtype=GRB.INTEGER, lb=0, name="E_pkaj")
 
+    #memory_usage = sys.getsizeof(E_pkaj)
+    #print(f"Estimated memory usage of E_pkaj: {memory_usage / 1e3:.2f} MB")
+
+    print("terminou as variaveis")
     ## Variáveis da função objetivo
     # Maior número de corredor utilizado na onda j andar a
     G_ja = model.addVars(J, A, vtype=GRB.INTEGER, lb=0, ub=len(K), name="G_ja")
@@ -95,14 +105,14 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
             for j in J:
                 # If t_kaj = 0, then sum_p E_pkaj <= 0 (force t_kaj to 1 if sum_p E_pkaj > 0)
                 model.addGenConstrIndicator(
-                    t_kaj[k, a, j],  # Indicator variable
-                    0,  # Trigger when t_kaj = 0
+                    t_kaj[k, a, j],
+                    0,
                     gp.quicksum(E_pkaj[p, k, a, j] for p in P) == 0,
                     name=f"t_kaj_zero_{k}_{a}_{j}"
                 )
                 model.addGenConstrIndicator(
-                    t_kaj[k, a, j],  # Indicator variable
-                    1,  # Trigger when t_kaj = 0
+                    t_kaj[k, a, j],
+                    1,
                     gp.quicksum(E_pkaj[p, k, a, j] for p in P) >= 1,
                     name=f"t_kaj_one_{k}_{a}_{j}"
                 )
@@ -111,15 +121,15 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
         for j in J:
             # If t_kaj = 0, then sum_p E_pkaj <= 0 (force t_kaj to 1 if sum_p E_pkaj > 0)
             model.addGenConstrIndicator(
-                Z_aj[a, j],  # Indicator variable
-                0,  # Trigger when t_kaj = 0
-                gp.quicksum(E_pkaj[p, k, a, j] for p in P for k in K) == 0,
+                Z_aj[a,j],
+                0,
+                gp.quicksum(E_pkaj[p,k,a,j] for p in P for k in K) == 0,
                 name=f"Z_aj_zero_{a}_{j}"
             )
             model.addGenConstrIndicator(
-                Z_aj[a, j],  # Indicator variable
-                1,  # Trigger when t_kaj = 0
-                gp.quicksum(E_pkaj[p, k, a, j] for p in P for k in K) >= 1,
+                Z_aj[a, j],
+                1,
+                gp.quicksum(E_pkaj[p,k,a,j] for p in P for k in K) >= 1,
                 name=f"Z_aj_one_{a}_{j}"
             )
 
@@ -127,15 +137,15 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
         for j in J:
             # If A_aj = 0, then sum_{p,k} E_pkaj <= 0 (force A_aj to 1 if sum > 0)
             model.addGenConstrIndicator(
-                A_aj[a, j],  # Indicator variable
-                0,  # Trigger when A_aj = 0
-                gp.quicksum(E_pkaj[p, k, a, j] for p in P for k in K) == 0,
+                A_aj[a, j],
+                0,
+                gp.quicksum(E_pkaj[p,k,a,j] for p in P for k in K) == 0,
                 name=f"A_aj_zero_{a}_{j}"
             )
             model.addGenConstrIndicator(
-                A_aj[a, j],  # Indicator variable
-                1,  # Trigger when A_aj = 0
-                gp.quicksum(E_pkaj[p, k, a, j] for p in P for k in K) >= 1,
+                A_aj[a, j],
+                1,
+                gp.quicksum(E_pkaj[p,k,a,j] for p in P for k in K) >= 1,
                 name=f"A_aj_zero_{a}_{j}"
             )
 
@@ -148,14 +158,13 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
                 name=f"G_ja_lower_{a}_{j}"
             )
             for k in K:
-                k_idx = corridor_indices[k]  # Map corridor name to index (e.g., 'Corridor1' → 1)
             # If E_pkaj > 0, then G_ja >= k_idx
-            model.addGenConstrIndicator(
-                t_kaj[k, a, j],  # Condition: E_pkaj > 0
-                1,  # Trigger when condition is true
-                G_ja[j, a] >= k_idx,  # Enforce G_ja >= k_idx
-                name=f"G_ja_upper_{k}_{a}_{j}"
-            )
+                model.addGenConstrIndicator(
+                    t_kaj[k, a, j],
+                    1,
+                    G_ja[j, a] >= corridor_indices[k],
+                    name=f"G_ja_upper_{k}_{a}_{j}"
+                )
 
 
     for a in A:
@@ -167,12 +176,11 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
                 name=f"L_ja_lower_{a}_{j}"
             )
             for k in K:
-                k_idx = corridor_indices[k]  # Map corridor name to index (e.g., 'Corridor1' → 1)
                 # If E_pkaj > 0, then L_ja <= k_idx
                 model.addGenConstrIndicator(
-                    t_kaj[k, a, j],  # Condition: E_pkaj > 0
-                    1,  # Trigger when condition is true
-                    L_ja[j, a] <= k_idx,  # Enforce L_ja <= k_idx
+                    t_kaj[k, a, j],
+                    1,
+                    L_ja[j, a] <= corridor_indices[k],
                     name=f"L_ja_upper_{k}_{a}_{j}"
                 )
 
@@ -193,24 +201,24 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
 
             # Lista de corredores usados na onda
             corredores_usados = [
-                k for a in A for k in K if t_kaj[k, a, j].x >= 1
+                k for a in A for k in K if t_kaj[k, a, J_to_index[j]].x >= 1
             ]
 
             # Lista de caixas alocadas na onda
             caixas_alocadas = [
-                i for i in I if any(x_ij[i, j].x >= 1 for j in J)
+                i for i in I if any(x_ij[i, J_to_index[j]].x >= 1 for j in J)
             ]
 
             # Quantidade total de produtos escolhidos na onda
             quantidade_produtos = sum(
-                E_pkaj[p, k, a, j].x for p in P for k in K for a in A
+                E_pkaj[P_to_index[p], k, a, J_to_index[j]].x for p in P for k in K for a in A
             )
 
             # Mapeamento corredor -> caixas
             corredor_caixa = {
                 k: [
                     i for i in I
-                    if any(E_pkaj[p, k, a, j].x > 0 for p in P for a in A)
+                    if any(E_pkaj[P_to_index[p], k, a, J_to_index[j]].x > 0 for p in P for a in A)
                 ]
                 for k in K
             }
@@ -229,7 +237,7 @@ def resolve_modelo(P, K, A, I, J, C, data_Q, q_pi_input):
                             for a in A:  # Iterar sobre os andares
                                 # Filtrar somente caixas alocadas e com PECAS > 0
                                 if x_ij[i, j].x > 0.5 and q_pi[p, i] > 0:
-                                    if t_kaj[k, a, j].x > 0.5:  # Apenas se o corredor foi usado
+                                    if t_kaj[k, a, J_to_index[j]].x > 0.5:  # Apenas se o corredor foi usado
                                         # Adicionar como tupla ao conjunto
                                         csv_data.add((
                                             j,  # ONDA

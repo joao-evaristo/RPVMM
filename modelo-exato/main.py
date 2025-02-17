@@ -31,6 +31,11 @@ if __name__ == "__main__":
         (sku, caixa_id): pecas
         for sku, caixa_id, pecas in zip(sku_boxes, caixa_id_boxes, pecas_boxes)
     }
+    all_PI_combs = {(p, i) for p in P for i in I}
+    diff_combs = all_PI_combs.difference(set(q_pi_input.keys()))
+
+    additional_data_q_pi = {(p, i): 0 for (p, i) in list(diff_combs)}
+    q_pi_input.update(additional_data_q_pi)
 
     resolve_modelo(P, K, A, I, J, C, data_q, q_pi_input)
 

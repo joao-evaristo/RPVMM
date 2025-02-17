@@ -1,5 +1,6 @@
-import random
 import math
+from random import randint, random, sample, shuffle
+
 from box import Box
 from corridor import Corridor
 from wave import Wave
@@ -98,10 +99,10 @@ class SimulatedAnnealing:
             box.set_wave(wave)
             self.waves[wave].add_box(box_id, total_products_box)
 
-            self.allocate_products_to_corridors(box, wave, corridors_copy)
+            self.allocate_boxes_to_corridors(box, wave, corridors_copy)
 
 
-    def allocate_products_to_corridors(self, box: Box, wave: int, corridors: Dict[str, Corridor] = None, is_random = False) -> None:
+    def allocate_boxes_to_corridors(self, box: Box, wave: int, corridors: Dict[str, Corridor] = None, is_random = False) -> None:
         for product in box.products:
             product_quantity_remaining = product.quantity
 
@@ -114,14 +115,30 @@ class SimulatedAnnealing:
                     raise Exception("Corridor not found")
 
                 box.add_corridor(corridor_id, product.sku)
-                self.waves[wave].insert_corridor(corridor_id, box.id)
+                self.waves[wave].add_corridor(corridor_id, box.id, product.sku, product_quantity_remaining)
                 self.waves[wave].add_corridor_product(corridor_id, product.sku, product_quantity_remaining)
                 product_quantity_remaining = remaining
+
+    # def allocate_product_to_corridor(self, product_sku: str, quantity: int, wave: int, corridors: Dict[str, Corridor] = None, is_random = False) -> None:
+    #     product_quantity_remaining = quantity
+    #
+    #     while product_quantity_remaining > 0:
+    #         corridor_id, corridor, remaining = self.find_corridor(
+    #             product_sku, product_quantity_remaining, corridors, is_random
+    #         )
+    #
+    #         if not corridor_id:
+    #             raise Exception("Corridor not found")
+    #
+    #         box.add_corridor(corridor_id, product.sku)
+    #         self.waves[wave].insert_corridor(corridor_id, box.id)
+    #         self.waves[wave].add_corridor_product(corridor_id, product.sku, product_quantity_remaining)
+    #         product_quantity_remaining = remaining
 
     def find_corridor(self, sku: str, quantity: int, corridors: Dict[str, Corridor] = None, is_random = False) -> Tuple[str, Corridor, int]:
         possible_corridors = self.product_to_corridors.get(sku, [])
         if is_random:
-            random.shuffle(possible_corridors)
+            shuffle(possible_corridors)
         for corridor_id in possible_corridors:
             corridor = corridors[corridor_id]
             remaining = corridor.consume_product(sku, quantity)
@@ -208,19 +225,28 @@ class SimulatedAnnealing:
         print(f"\nBest cost: {self.solution_cost}")
 
     def generate_neighbor(self, current_solution):
+        def get_number_of_corridors_to_swap(wave: Wave):
+            max_swaps = len(wave.corridors.keys()) // 2
+            temp_ratio = self.temperature / self.max_temp
+            return randint(1, max(1, int(max_swaps * temp_ratio)))
         neighbor_solution = current_solution.copy()
         for wave_id, wave in neighbor_solution.items():
-            num_corridors_picks = max(1, int(len(wave.corridors.keys()) * (self.temperature / self.max_temp)))
-            sorted_corridors = random.sample(wave.corridors.keys(), num_corridors_picks)
-            wave_product_quantity = dict[str, int]
-            # remover os corredores selecionados e baguncar a ordem para forcar a escolher novos dentro dos que dispoe os produtos
+            num_corridors_picks = get_number_of_corridors_to_swap(wave)
+            print(list(wave.corridors.keys()).sort())
+            corridors_keys = list(wave.corridors.keys())
+            corridors_keys.sort()
+            sorted_corridors = sample(corridors_keys, num_corridors_picks)
+            wave_box_product_quantity = dict[str, int]
+            # remover os corredores selecionados e baguncar a ordem para forcar a escolher novos dentro dos que dispoem os produtos
             for corridor in sorted_corridors:
                 # vou ter que saber quais produtos da caixa vou ter que realocar
-                products_quantity = wave.remove_corridor(corridor)
-                wave_product_quantity = {key: wave_product_quantity.get(key, 0) + products_quantity.get(key, 0) for key in set(wave_product_quantity) | set(products_quantity)}
+                boxes = wave.remove_corridor(corridor)
+                wave_box_product_quantity = {key: wave_box_product_quantity.get(key, 0) + boxes.get(key, 0) for key in set(wave_box_product_quantity) | set(boxes)}
+                # wave_box_product_quantity = {key: wave_product_quantity.get(key, 0) + products_quantity.get(key, 0) for key in set(wave_product_quantity) | set(products_quantity)}
                 # escolher um corredor aleatorio para alocar os produtos
-            for sku, quantity in wave_product_quantity.items():
-                self.allocate_products_to_corridors(self.boxes[wave.boxes[0]], wave_id, self.corridors, True)
+            #print(wave_box_product_quantity)
+            # for sku, quantity in wave_product_quantity.items():
+            #     self.allocate_boxes_to_corridors(self.boxes[wave.boxes[0]], wave_id, self.corridors, True)
 
 
     # Update calculate_fo to include penalties for class mismatch and capacity overflow
@@ -264,7 +290,7 @@ class SimulatedAnnealing:
             return True
         else:
             delta = neighbor_cost - current_cost
-            return random.random() < math.exp(delta / self.temperature)
+            return random() < math.exp(delta / self.temperature)
 
     def calculate_fo_for_solution(self, solution):
         original_waves = self.waves.copy()
