@@ -23,8 +23,8 @@ class Config:
     initial_temp: float = 1000
     alpha: float = 0.99
     sa_max: int = 300
-    floor_punishment_weight: int = 0
-    corridor_punishment_weight: int = 0
+    floor_punishment_weight: int = 2
+    corridor_punishment_weight: int = 1
 
 
 class SimulatedAnnealing:
@@ -71,7 +71,7 @@ class SimulatedAnnealing:
                 sku=self.corridor_skus[index],
                 quantity=self.corridor_pieces[index],
             )
-            self.product_to_corridors[self.corridor_skus[index]].append(corridor_key)
+            self.product_to_corridors[self.corridor_skus[index]].append(corridor_key) # trocar isso aqui para ter a quantidade tambem
 
     def generate_initial_solution(self) -> None:
         def reset_wave(wave: int, box: Box) -> Tuple[
@@ -97,7 +97,6 @@ class SimulatedAnnealing:
                 )
 
             box.set_wave(wave)
-            self.waves[wave].add_box(box_id, total_products_box)
 
             self.allocate_boxes_to_corridors(box, wave, corridors_copy)
 
@@ -116,24 +115,7 @@ class SimulatedAnnealing:
 
                 box.add_corridor(corridor_id, product.sku)
                 self.waves[wave].add_corridor(corridor_id, box.id, product.sku, product_quantity_remaining)
-                self.waves[wave].add_corridor_product(corridor_id, product.sku, product_quantity_remaining)
                 product_quantity_remaining = remaining
-
-    # def allocate_product_to_corridor(self, product_sku: str, quantity: int, wave: int, corridors: Dict[str, Corridor] = None, is_random = False) -> None:
-    #     product_quantity_remaining = quantity
-    #
-    #     while product_quantity_remaining > 0:
-    #         corridor_id, corridor, remaining = self.find_corridor(
-    #             product_sku, product_quantity_remaining, corridors, is_random
-    #         )
-    #
-    #         if not corridor_id:
-    #             raise Exception("Corridor not found")
-    #
-    #         box.add_corridor(corridor_id, product.sku)
-    #         self.waves[wave].insert_corridor(corridor_id, box.id)
-    #         self.waves[wave].add_corridor_product(corridor_id, product.sku, product_quantity_remaining)
-    #         product_quantity_remaining = remaining
 
     def find_corridor(self, sku: str, quantity: int, corridors: Dict[str, Corridor] = None, is_random = False) -> Tuple[str, Corridor, int]:
         possible_corridors = self.product_to_corridors.get(sku, [])
@@ -145,23 +127,6 @@ class SimulatedAnnealing:
             if remaining is not None:
                 return corridor_id, corridor, remaining
         return None, None, None
-
-    # def calculate_fo(self) -> float:
-    #     total_waves = len(self.waves)
-    #     total_area = 0
-    #     floor_punishment = 0
-    #     corridor_punishment = 0
-    #     corridors_used = set()
-    #
-    #     for wave in self.waves.values():
-    #         total_area += self.calculate_area(wave)
-    #         floor_punishment += self.calculate_punishment_floor(wave)
-    #         corridor_punishment += self.calculate_punishment_corridor(wave, corridors_used)
-    #         corridors_used.update(wave.corridors)
-    #
-    #     average_area = total_area / total_waves
-    #     fo = average_area + floor_punishment + corridor_punishment
-    #     return fo
 
     def calculate_area(self, wave: Wave) -> int:
         area = 0
@@ -192,8 +157,15 @@ class SimulatedAnnealing:
                     return False
         return True
 
-    def get_boxes_from_wave(self, wave: Wave) -> List[Box]:
-        return [self.boxes[box_id] for box_id in wave.boxes]
+    def get_boxes_from_wave(self, wave: Wave) -> List[Box]: # mudar aqui
+        boxes_corridors = self.get_boxes_ids_from_wave(wave)
+        return [self.boxes[box_id] for box_id in boxes_corridors]
+
+    def get_boxes_ids_from_wave(self, wave: Wave):
+        boxes_corridors = set()
+        for corridor in wave.corridors.keys():
+            boxes_corridors.update(wave.corridors[corridor].keys())
+        return boxes_corridors
 
     def simulated_annealing(self):
         self.generate_initial_solution()
@@ -240,6 +212,7 @@ class SimulatedAnnealing:
             # remover os corredores selecionados e baguncar a ordem para forcar a escolher novos dentro dos que dispoem os produtos
             for corridor in sorted_corridors:
                 # vou ter que saber quais produtos da caixa vou ter que realocar
+                # atualizar os corredores e produtos disponiveis, pois retirei o corredor
                 boxes = wave.remove_corridor(corridor)
                 wave_box_product_quantity = {key: wave_box_product_quantity.get(key, 0) + boxes.get(key, 0) for key in set(wave_box_product_quantity) | set(boxes)}
                 # wave_box_product_quantity = {key: wave_product_quantity.get(key, 0) + products_quantity.get(key, 0) for key in set(wave_product_quantity) | set(products_quantity)}
@@ -249,7 +222,6 @@ class SimulatedAnnealing:
             #     self.allocate_boxes_to_corridors(self.boxes[wave.boxes[0]], wave_id, self.corridors, True)
 
 
-    # Update calculate_fo to include penalties for class mismatch and capacity overflow
     def calculate_fo(self, waves) -> float:
         total_waves = len(waves)
         if total_waves == 0:
@@ -264,7 +236,7 @@ class SimulatedAnnealing:
 
         for wave in waves.values():
             # Class mismatch penalty
-            box_classes = {self.boxes[bid].wave_class for bid in wave.boxes}
+            box_classes = {self.boxes[bid].wave_class for bid in self.get_boxes_ids_from_wave(wave)}
             if len(box_classes) > 1:
                 class_punishment += 1000  # Adjust weight as needed
             elif wave.wave_class not in box_classes:
@@ -297,12 +269,3 @@ class SimulatedAnnealing:
         cost = self.calculate_fo(solution)
         self.waves = original_waves
         return cost
-
-    # pensar em como vou fazer para gerar a vizinhança
-    # uma ideia é trocar uma caixa de uma onda por outra caixa de outra onda
-    # ou trocar o corredor
-    # tem que validar se a solucao e valida ( atende os criterios de caixa, onda, classe, etc)
-
-
-    # Permitir que solucoes que nao cumpram as restricoes, mas colocando uma alta penalizacao
-    # o que permite um maior leque de alteracoes e evita que o algoritmo fique preso em um minimo local

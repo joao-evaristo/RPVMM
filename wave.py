@@ -3,17 +3,11 @@ from box import Box
 class Wave:
     def __init__(self, wave_class: str):
         self.wave_class = wave_class
-        self.boxes: set[int] = set()
         self.corridors: dict[str, dict[int, dict[str, int]]] = {}
         self.floors: set[int] = set()
         self.max_min_even_corridor: dict[int, list[int]] = {}
         self.max_min_odd_corridor: dict[int, list[int]] = {}
         self.total_products: int = 0
-        self.corridors_products: dict[str, dict[str, int]] = {}
-
-    def add_box(self, box_id: int, box_pieces: int) -> None:
-        self.boxes.add(box_id)
-        self.total_products += box_pieces
 
     def add_corridor(self, corridor_key: str, box_id: int, product: str, quantity: int) -> None:
         if corridor_key not in self.corridors:
@@ -26,13 +20,7 @@ class Wave:
         corridor_id, floor = self.extract_corridor_id_floor(corridor_key)
         self.add_floor(floor)
         self.update_corridor_bounds(corridor_id, floor)
-
-    def add_corridor_product(self, corridor_key: str, product_sku: str, quantity: int) -> None:
-        if corridor_key not in self.corridors_products:
-            self.corridors_products[corridor_key] = {}
-        if product_sku not in self.corridors_products[corridor_key]:
-            self.corridors_products[corridor_key][product_sku] = 0
-        self.corridors_products[corridor_key][product_sku] += quantity
+        self.total_products += quantity
 
     def get_boxes_corridor(self, corridor_key: str) -> set[int]:
         if corridor_key in self.corridors:
@@ -82,25 +70,19 @@ class Wave:
     def remove_box_corridor(self, box: Box) -> None:
         for corridor_key in box.get_corridors():
             if corridor_key in self.corridors and box.id in self.corridors[corridor_key]:
-                self.corridors[corridor_key].remove(box.id)
+                self.corridors[corridor_key].pop(box.id)
                 if not self.corridors[corridor_key]:
                     del self.corridors[corridor_key]
                     self.update_floors()
                     self.update_max_min_corridor()
 
     def remove_box(self, box: Box) -> None:
-        self.boxes.remove(box.id)
         self.total_products -= box.get_total_products()
         self.remove_box_corridor(box)
 
-    def insert_box(self, box: Box, corridors_keys: [str]) -> None: # mudar isso aqui depois
-        self.add_box(box.id, box.get_total_products())
-        for corridor_key in corridors_keys:
-            self.insert_corridor(corridor_key, box.id)
 
     def remove_corridor(self, corridor_key: str) -> dict[int, dict[str, int]]:
         if corridor_key in self.corridors:
-            products_quantity = self.corridors_products[corridor_key]
             box = self.corridors[corridor_key]
             del self.corridors[corridor_key]
             self.update_floors()
