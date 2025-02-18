@@ -4,7 +4,6 @@ class Corridor:
     def __init__(self, floor: int):
         self.floor = floor
         self.products = []
-        self.waves = []
 
     def add_product(self, sku: str, quantity: int):
         self.products.append(Product(sku, quantity))
@@ -15,9 +14,6 @@ class Corridor:
             if product.sku == sku:
                 return product
         return None
-
-    def add_wave(self, wave):
-        self.waves.append(wave)
 
     def consume_product(self, sku: str, quantity: int):
         """Remove a product from the corridor."""

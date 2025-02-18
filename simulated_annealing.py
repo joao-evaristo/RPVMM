@@ -79,7 +79,7 @@ class SimulatedAnnealing:
             wave += 1
             wave_products_quantity = 0
             current_wave_class = box.wave_class
-            self.waves[wave] = Wave(current_wave_class)
+            self.waves[wave] = Wave(current_wave_class, wave)
             return wave, wave_products_quantity, current_wave_class
 
         corridors_copy = self.corridors.copy()
@@ -88,7 +88,7 @@ class SimulatedAnnealing:
 
         for box_id, box in self.boxes.items():
             if wave not in self.waves:
-                self.waves[wave] = Wave(current_wave_class)
+                self.waves[wave] = Wave(current_wave_class, wave)
 
             total_products_box = box.get_total_products()
             if self.waves[wave].total_products + total_products_box > self.config.max_wave_capacity or box.wave_class != current_wave_class:
@@ -99,6 +99,7 @@ class SimulatedAnnealing:
             box.set_wave(wave)
 
             self.allocate_boxes_to_corridors(box, wave, corridors_copy)
+        print(self.validate_solution(self.waves))
 
 
     def allocate_boxes_to_corridors(self, box: Box, wave: int, corridors: Dict[str, Corridor] = None, is_random = False) -> None:
@@ -149,15 +150,18 @@ class SimulatedAnnealing:
         for wave in waves.values():
             wave_boxes = self.get_boxes_from_wave(wave)
             if wave.total_products > self.config.max_wave_capacity:
-                return False
+                print(f"Wave {wave} has more products than allowed")
+                #return False
             if len(set([box.wave_class for box in wave_boxes])) > 1:
+                print(f"Wave {wave} has boxes with different classes")
                 return False
             for box in wave_boxes:
-                if box.wave != wave:
+                if box.wave != wave.id:
+                    print(f"Box {box} is not allocated to wave {wave}")
                     return False
         return True
 
-    def get_boxes_from_wave(self, wave: Wave) -> List[Box]: # mudar aqui
+    def get_boxes_from_wave(self, wave: Wave) -> List[Box]:
         boxes_corridors = self.get_boxes_ids_from_wave(wave)
         return [self.boxes[box_id] for box_id in boxes_corridors]
 
@@ -171,12 +175,13 @@ class SimulatedAnnealing:
         self.generate_initial_solution()
         current_solution = self.waves.copy()
         current_cost = self.calculate_fo(current_solution)
+        corridors_solution = self.corridors.copy()
         best_solution = current_solution
         best_cost = current_cost
 
         iteration = 0
         while self.temperature > 1 and iteration < self.config.sa_max:
-            neighbor_solution = self.generate_neighbor(current_solution)
+            neighbor_solution = self.generate_neighbor(current_solution, corridors_solution)
             neighbor_cost = self.calculate_fo_for_solution(neighbor_solution)
             print(f"Current cost: {current_cost}, Neighbor cost: {neighbor_cost}, iteration: {iteration}")
 
@@ -196,32 +201,31 @@ class SimulatedAnnealing:
         self.solution_cost = best_cost
         print(f"\nBest cost: {self.solution_cost}")
 
-    def generate_neighbor(self, current_solution):
+    def generate_neighbor(self, current_solution, corridors_solution: [Corridor]):
         def get_number_of_corridors_to_swap(wave: Wave):
             max_swaps = len(wave.corridors.keys()) // 2
             temp_ratio = self.temperature / self.max_temp
             return randint(1, max(1, int(max_swaps * temp_ratio)))
+
+        def refill_corridors(corridor: Corridor, boxes: dict[int, dict[str, int]]):
+            for box in boxes:
+                for sku, quantity in boxes[box].items():
+                    corridor.add_product(sku, quantity)
+
         neighbor_solution = current_solution.copy()
         for wave_id, wave in neighbor_solution.items():
             num_corridors_picks = get_number_of_corridors_to_swap(wave)
-            print(list(wave.corridors.keys()).sort())
             corridors_keys = list(wave.corridors.keys())
             corridors_keys.sort()
             sorted_corridors = sample(corridors_keys, num_corridors_picks)
-            wave_box_product_quantity = dict[str, int]
-            # remover os corredores selecionados e baguncar a ordem para forcar a escolher novos dentro dos que dispoem os produtos
+            boxes_to_reallocate = []
             for corridor in sorted_corridors:
-                # vou ter que saber quais produtos da caixa vou ter que realocar
-                # atualizar os corredores e produtos disponiveis, pois retirei o corredor
                 boxes = wave.remove_corridor(corridor)
-                wave_box_product_quantity = {key: wave_box_product_quantity.get(key, 0) + boxes.get(key, 0) for key in set(wave_box_product_quantity) | set(boxes)}
-                # wave_box_product_quantity = {key: wave_product_quantity.get(key, 0) + products_quantity.get(key, 0) for key in set(wave_product_quantity) | set(products_quantity)}
-                # escolher um corredor aleatorio para alocar os produtos
-            #print(wave_box_product_quantity)
-            # for sku, quantity in wave_product_quantity.items():
-            #     self.allocate_boxes_to_corridors(self.boxes[wave.boxes[0]], wave_id, self.corridors, True)
-
-
+                refill_corridors(corridors_solution[corridor], boxes)
+                boxes_to_reallocate.extend(list(boxes.keys()))
+            for box in boxes_to_reallocate:
+                self.allocate_boxes_to_corridors(self.boxes[box], wave_id, corridors_solution, True)
+            # verificar porque nao esta conseguindo achar corredores para realocar
     def calculate_fo(self, waves) -> float:
         total_waves = len(waves)
         if total_waves == 0:

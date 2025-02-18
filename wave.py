@@ -1,7 +1,8 @@
 from box import Box
 
 class Wave:
-    def __init__(self, wave_class: str):
+    def __init__(self, wave_class: str, id: int):
+        self.id = id
         self.wave_class = wave_class
         self.corridors: dict[str, dict[int, dict[str, int]]] = {}
         self.floors: set[int] = set()
